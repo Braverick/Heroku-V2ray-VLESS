@@ -1,0 +1,78 @@
+name: 🛡️ Deploy V2Ray
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-v2ray:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y curl unzip
+
+      - name: Download and run V2Ray install script
+        run: |
+          curl -L https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh -o install-v2ray.sh
+          chmod +x install-v2ray.sh
+          sudo ./install-v2ray.sh
+
+      - name: Configure V2Ray
+        run: |
+          cat <<EOF | sudo tee /usr/local/etc/v2ray/config.json
+          {
+            "inbounds": [
+              {
+                "port": 10086,
+                "protocol": "vless",
+                "settings": {
+                  "clients": [
+                    {
+                      "id": "$(uuidgen)",
+                      "level": 1,
+                      "flow": "xtls-rprx-direct"
+                    }
+                  ],
+                  "decryption": "none"
+                },
+                "streamSettings": {
+                  "network": "ws",
+                  "wsSettings": {
+                    "path": "/$(uuidgen)"
+                  },
+                  "security": "tls"
+                }
+              }
+            ],
+            "outbounds": [
+              { "protocol": "freedom", "settings": {} }
+            ]
+          }
+          EOF
+
+      - name: Generate client config
+        run: |
+          UUID=$(jq -r '.inbounds[0].settings.clients[0].id' /usr/local/etc/v2ray/config.json)
+          PATH=$(jq -r '.inbounds[0].streamSettings.wsSettings.path' /usr/local/etc/v2ray/config.json)
+          DOMAIN=$(curl -s ifconfig.me)
+          cat <<EOF > client.json
+          {
+            "v": "2",
+            "ps": "GitHub-Actions-V2Ray",
+            "add": "$DOMAIN",
+            "port": "10086",
+            "id": "$UUID",
+            "aid": "0",
+            "net": "ws",
+            "type": "none",
+            "host": "",
+            "path": "$PATH",
+            "tls": "tls"
+          }
+          EOF
+
+      - name: Display client config
+        run: |
+          echo "======= V2Ray Client Config ======="
+          cat client.json
